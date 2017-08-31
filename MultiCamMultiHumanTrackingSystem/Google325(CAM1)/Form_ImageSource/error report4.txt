@@ -1,0 +1,10 @@
+fd green CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0
+detect_and_draw CAM1 = 0

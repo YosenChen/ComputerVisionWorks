@@ -1,0 +1,101 @@
+#include "CheckingState.h"
+#include "TrackingState.h"
+
+CheckingState CheckingState::mCheckingState;
+double CheckingState::RECOGNIZING_TIME = 3.0;
+
+void CheckingState::enter( OpticalFlow* SingletonInstancePtr )
+{
+	mSingletonInstancePtr = SingletonInstancePtr;
+	reset();
+	initChecking();
+	
+	time (&mStartTimeStamp);
+}
+
+void CheckingState::exit( void )
+{
+}
+
+void CheckingState::pause( void )
+{
+}
+
+void CheckingState::resume( void )
+{
+}
+
+void CheckingState::update( unsigned long lTimeElapsed )
+{
+}
+
+
+void CheckingState::initChecking()
+{
+	mSingletonInstancePtr->mNormalMessage += string( "Motion Detected!\n" );
+	mSingletonInstancePtr->mNormalMessage += string( "please put your interacting object in the box\n" );
+	mSingletonInstancePtr->center = cvPoint( (mMiddleX=(mSingletonInstancePtr->left+mSingletonInstancePtr->right)/2), (mMiddleY=(mSingletonInstancePtr->top > mSingletonInstancePtr->mHeight-0.5*tar_square) ? (mSingletonInstancePtr->mHeight-static_cast<int>(0.5*tar_square)) : ((mSingletonInstancePtr->top < static_cast<int>(0.5*tar_square)) ? static_cast<int>(0.5*tar_square) : mSingletonInstancePtr->top)) );
+}
+
+void CheckingState::drawCheckingBox()
+{
+	cvCircle(mSingletonInstancePtr->result, mSingletonInstancePtr->center, 1, CV_RGB(0,255,255), 3);
+	cvRectangle( mSingletonInstancePtr->result, cvPoint(mMiddleX-static_cast<int>(0.5*tar_square), mMiddleY-static_cast<int>(0.5*tar_square)),
+		cvPoint(mMiddleX+static_cast<int>(0.5*tar_square), mMiddleY+static_cast<int>(0.5*tar_square)), CV_RGB(0,255,255), 3, 8, 0);
+	cvPutText( mSingletonInstancePtr->result, "CHECKING...", cvPoint(mSingletonInstancePtr->left, mMiddleY-static_cast<int>(0.7*tar_square)), &(mSingletonInstancePtr->Tfont), CV_RGB(0,255,255) );
+}
+
+bool CheckingState::waitForChecking()
+{
+	time (&mEndTimeStamp);
+
+	if( difftime( mEndTimeStamp, mStartTimeStamp ) >= RECOGNIZING_TIME ) // jump to trackingState
+	{
+		return false;
+	}
+
+	return true;
+}
+
+void CheckingState::setupRecognizedImageROI()
+{
+	//以下建立影像的roi區域
+	mTar_box.x = (mMiddleX-static_cast<int>(0.3*tar_square) > 0) ? mMiddleX-static_cast<int>(0.3*tar_square) : 0;
+	mTar_box.y = (mMiddleY-static_cast<int>(0.3*tar_square) > 0) ? mMiddleY-static_cast<int>(0.3*tar_square) : 0;
+	mTar_box.height = (mTar_box.y+0.6*tar_square < mSingletonInstancePtr->mHeight) ? static_cast<int>(0.6*tar_square) : mSingletonInstancePtr->mHeight-mTar_box.y;
+	mTar_box.width = (mTar_box.x+static_cast<int>(0.6*tar_square) < mSingletonInstancePtr->mWidth) ? static_cast<int>(0.6*tar_square) : mSingletonInstancePtr->mWidth-mTar_box.x;
+	cvZero(mSingletonInstancePtr->RgnRegion);
+	cvRectangle(mSingletonInstancePtr->RgnRegion, cvPoint(mTar_box.x, mTar_box.y), cvPoint(mTar_box.x+mTar_box.width, mTar_box.y+mTar_box.height), cvScalar(255), -1);
+
+	//將剛剛建立的roi區域拿去當camshift的初始追蹤目標
+	mSingletonInstancePtr->Cam->initCamShiftChecking( mSingletonInstancePtr->result, mSingletonInstancePtr->RgnRegion, mTar_box );
+	cvRectangle( mSingletonInstancePtr->result, cvPoint(mTar_box.x, mTar_box.y), cvPoint(mTar_box.x+mTar_box.width, mTar_box.y+mTar_box.height), CV_RGB( 0, 0, 255), 3, 8, 0 );
+	time (&mEndTimeStamp);
+
+	if (mSingletonInstancePtr->fgmask) 
+		cvReleaseImage(&(mSingletonInstancePtr->fgmask));
+	mSingletonInstancePtr->fgmask = 0;
+}
+
+bool CheckingState::execute( IplImage* imageSource )
+{
+	drawCheckingBox();
+
+	if( waitForChecking() == false ) // jump to trackingState
+	{
+		
+		setupRecognizedImageROI();
+		changeState( TrackingState::getSingletonPtr() );
+		mSingletonInstancePtr->prevReturnROI = mTar_box; // for initializing the ROI
+
+		return false;
+	}
+
+	return true;
+}
+
+void CheckingState::reset()
+{
+	mMiddleX = 0;
+	mMiddleY = 0;
+}

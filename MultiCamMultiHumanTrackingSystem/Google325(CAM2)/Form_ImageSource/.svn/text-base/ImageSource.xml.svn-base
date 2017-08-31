@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<!--Type = Image, WebCam, Matrox_Morphis, or Matrox_CronosPlus -->
+<!-- Max Num Image = 4 -->
+<Sources>
+    <!--<Source Type="AVI" Width="320" Height="240" Path="" FileName="1_gesture_test.avi" Repeat="true"/>-->
+    <!--<Source Type="AVI" Width="320" Height="240" Path="" FileName="test2.avi" Repeat="true"/>-->
+    <!--<Source Type="Image" Width="320" Height="240" Path="" FileName="table" FileType="bmp" />
+    <Source Type="Image" Width="320" Height="240" Path="" FileName="table" FileType="bmp" />-->
+    <!--<Source Type="Image" Width="320" Height="240" Path="" FileName="table" FileType="bmp" />
+    <Source Type="Image" Width="320" Height="240" Path="" FileName="table" FileType="bmp" />-->
+    <Source Type="WebCam" Width="320" Height="240" />
+    <!--<Source Type="Matrox_Morphis" Width="320" Height="240" NumCamera="2" />-->
+</Sources>
+<!--FlipMode = 0(both X and Y), 1(X), -1(Y) -2(no flip) -->
+<Adjusts>
+    <Adjust FlipMode="0" LTX="18" LTY="28" RBX="297" RBY="200" ResizeWidth="320" ResizeHeight="240" />
+    <Adjust FlipMode="0" LTX="38" LTY="40" RBX="271" RBY="192" ResizeWidth="320" ResizeHeight="240" />
+    <Adjust FlipMode="0" LTX="40" LTY="40" RBX="140" RBY="140" ResizeWidth="320" ResizeHeight="240" />
+    <Adjust FlipMode="-1" LTX="50" LTY="50" RBX="150" RBY="150" ResizeWidth="320" ResizeHeight="240" />
+</Adjusts>
+<!--VisionSensor=================================================================================-->
+<VisionSensors>
+    <VisionSensor>
+        <ResultWindow Name="camera0" PosX="0" PosY="0" />
+        <Corner LTX="26" LTY="43" RTX="273" RTY="46" LBX="35" LBY="208" RBX="278" RBY="208" />
+        <EdgeDetector Threshold1="100.000000" Threshold2="50.000000" />
+        <MotionDetector Threshold="29" />
+        <Contour LengthThreshold="50" />
+        <Regions>
+            <Region LTX="80" LTY="80" RBX="100" RBY="100" BinaryThreshold="0.100000" TriggerCountThreshold="10" />
+        </Regions>
+        <Binarize Threshold="100" />
+    </VisionSensor>
+    <VisionSensor>
+        <ResultWindow Name="camera1" PosX="330" PosY="0" />
+        <Corner LTX="38" LTY="72" RTX="208" RTY="50" LBX="59" LBY="205" RBX="268" RBY="140" />
+        <EdgeDetector Threshold1="100.000000" Threshold2="50.000000" />
+        <MotionDetector Threshold="55" />
+        <Contour LengthThreshold="50" />
+        <Regions>
+            <Region LTX="150" LTY="150" RBX="200" RBY="170" BinaryThreshold="0.300000" TriggerCountThreshold="5" />
+        </Regions>
+        <Binarize Threshold="100" />
+    </VisionSensor>
+    <VisionSensor>
+        <ResultWindow Name="camera2" PosX="660" PosY="0" />
+        <Corner LTX="60" LTY="27" RTX="217" RTY="27" LBX="80" LBY="160" RBX="221" RBY="157" />
+        <EdgeDetector Threshold1="100.000000" Threshold2="50.000000" />
+        <MotionDetector Threshold="12" />
+        <Contour LengthThreshold="50" />
+        <Binarize Threshold="100" />
+    </VisionSensor>
+    <VisionSensor>
+        <ResultWindow Name="camera3" PosX="0" PosY="260" />
+        <Corner LTX="60" LTY="17" RTX="217" RTY="17" LBX="80" LBY="160" RBX="221" RBY="157" />
+        <EdgeDetector Threshold1="100.000000" Threshold2="50.000000" />
+        <MotionDetector Threshold="13" />
+        <Contour LengthThreshold="50" />
+        <Binarize Threshold="100" />
+    </VisionSensor>
+</VisionSensors>

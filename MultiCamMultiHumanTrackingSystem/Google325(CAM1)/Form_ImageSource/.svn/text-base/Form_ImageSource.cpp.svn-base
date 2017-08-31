@@ -1,0 +1,188 @@
+// Form_ImageSource.cpp : main project file.
+
+//#include "stdafx.h"
+#include "Form1.h"
+
+using namespace Form_ImageSource;
+
+[STAThreadAttribute]
+int main(array<System::String ^> ^args)
+{
+	//showWin32Console();
+
+	//fileOut.open("error report.txt",ios::out);
+	// Enabling Windows XP visual effects before any controls are created
+
+//AllocConsole();
+//try { 
+	Application::EnableVisualStyles();
+	Application::SetCompatibleTextRenderingDefault(false); 
+
+	// Create the main window and run it
+	Application::Run(gcnew Form1());	
+// } catch( ... )
+//{}
+//
+//FreeConsole();
+
+
+   // FreeConsole();
+	return 0;
+}
+
+void Form1::mInitializeMyObjects()
+{
+	//mWidthCapturedImage = 320;
+	//mHeightCapturedImage = 240;
+	this->pictureBox3->Size = System::Drawing::Size(mWidthCapturedImage, mHeightCapturedImage);
+	this->pictureBox4->Size = System::Drawing::Size(mWidthCapturedImage, mHeightCapturedImage);
+
+	mImageSourceWebCam = new C_ImageSourceWebCam;
+	mImageSourceWebCam->initialize( cvPoint(mWidthCapturedImage,mHeightCapturedImage) ); //->mInitializeGray(1, cvPoint(320,240), miResizeSize[0], miLT[0], miRB[0]);
+
+	motionDetection = OpticalFlow::getSingletonPtr( mWidthCapturedImage, mHeightCapturedImage );
+	mpCounterForFPS=new CPerformanceCounter;
+	mpCounterForProcessingTime=new CPerformanceCounter;
+
+	matColorDisplayImage=new ClassOpenCVMat;
+	matColorDisplayImage->mCreateRGBUCMat(mWidthCapturedImage,mHeightCapturedImage);
+
+	matColorDisplayResult=new ClassOpenCVMat;
+	matColorDisplayResult->mCreateRGBUCMat(mWidthCapturedImage,mHeightCapturedImage);
+
+	//assign the buffer head pointer to the bitmap
+	IntPtr pToDisplayImage(matColorDisplayImage->mpUCArray);
+	mBitMapImage=gcnew System::Drawing::Bitmap(mWidthCapturedImage,mHeightCapturedImage,mWidthCapturedImage*3,System::Drawing::Imaging::PixelFormat::Format24bppRgb, pToDisplayImage);
+
+	IntPtr pToDisplayResult(matColorDisplayResult->mpUCArray);
+	mBitMapResult=gcnew System::Drawing::Bitmap(mWidthCapturedImage,mHeightCapturedImage,mWidthCapturedImage*3,System::Drawing::Imaging::PixelFormat::Format24bppRgb, pToDisplayResult);
+
+	motionDetection->initialize( matColorDisplayImage, matColorDisplayResult );
+
+	//initialize trackbars
+	//if(mpImageSourceMgr->miMotionThreshold[0]>=0)
+	//	barMotionThreshold->Value=mpImageSourceMgr->miMotionThreshold[0];
+	
+	imageTemp = cvCreateImage( cvSize(mWidthCapturedImage,mHeightCapturedImage), 8, 3 );
+
+	//Flags and Index
+	miFrameIndex=0;
+	mbGrab=false;
+	mbStep=false;
+	mStartCount = true;
+	
+	txtFrameIndex->Text = miFrameIndex.ToString();
+	textProcessTime->Text = miFrameIndex.ToString();
+}
+
+void Form1::mReleaseMyObjects()
+{
+	delete matColorDisplayImage;
+	delete matColorDisplayResult;
+	delete mpCounterForFPS;
+	delete mpCounterForProcessingTime;
+	delete mImageSourceWebCam;
+
+	OpticalFlow::destroyInstance();
+}
+
+IplImage* Form1::getCurrnentImageFromCam()
+{
+	return mImageSourceWebCam->grabImage();
+}
+
+void Form1::mProcessLoop()
+{
+//	static bool flag = true;
+//	_CrtMemState s1, s2, s3;
+//_CrtMemCheckpoint( &s2 );
+//if ( _CrtMemDifference( &s3, &s1, &s2) && flag == false)
+//{
+//   _CrtMemDumpStatistics( &s1 );
+//   cout <<endl;
+//}
+	////================================
+	if(mbGrab || mbStep)
+	{
+		mbStep=false;
+
+		miFrameIndex++;
+
+//Convert the gray buffer to the display color buffer
+		IplImage *pImageSource = getCurrnentImageFromCam();
+
+		mpCounterForProcessingTime->StartCount();
+		
+		motionDetection->startProcess( pImageSource );
+
+		mpCounterForProcessingTime->EndCount();
+
+		//================================
+		showMessage( motionDetection->getNormalMessage(), motionDetection->getControlMessage() );
+
+	}
+
+	mShowTimer();
+
+	this->pictureBox3->Image=mBitMapImage;
+	this->pictureBox4->Image=mBitMapResult;
+	//_CrtMemCheckpoint( &s1 );
+}
+
+void Form1::mShowFPS( int fps )
+{
+	//frameIndex
+	txtFrameIndex->Text = fps.ToString();
+}
+
+void Form1::mShowTimer()
+{
+	//processing time
+	textProcessTime->Text = mpCounterForProcessingTime->CalculateElapsedTime().ToString();
+}
+
+System::String^	 Form1::stdString2SystemString( string s )
+{
+	return Marshal::PtrToStringAnsi(static_cast<IntPtr>(const_cast<char *>(s.c_str())));
+}
+
+void Form1::showMessage( string *normalMessage, string *controlMessage )
+{
+	//static int count = 0;
+	//count++;
+	//if( count % 2 == 0 )
+	//{
+	//	normalMessagePresenter->AppendText( stdString2SystemString( string("XDDDDDD\n") ) );
+	//	controlMessagePresenter->AppendText( stdString2SystemString( string("DDDDDDX\n") ) );
+	//}
+	//else
+	//{
+	//	normalMessagePresenter->AppendText( stdString2SystemString( string("XD\n") ) );
+	//	controlMessagePresenter->AppendText( stdString2SystemString( string("DX\n") ) );
+	//
+	//}
+
+	static int mCountNormal = 0;
+	static int mCountControl = 0;
+
+	mCountNormal += normalMessage->size();
+	mCountControl += controlMessage->size();
+
+	if( mCountNormal >= 1000 )
+	{
+		normalMessagePresenter->Clear();
+		mCountNormal = 0;
+	}
+	if( mCountControl >= 1000 )
+	{
+		controlMessagePresenter->Clear();
+		mCountControl = 0;
+
+	}
+
+	normalMessagePresenter->AppendText( stdString2SystemString( *normalMessage ) );
+	controlMessagePresenter->AppendText( stdString2SystemString( *controlMessage ) );
+	
+	normalMessage->clear();
+	controlMessage->clear();
+}

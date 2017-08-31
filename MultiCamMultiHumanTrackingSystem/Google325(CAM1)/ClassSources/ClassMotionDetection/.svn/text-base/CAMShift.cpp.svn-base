@@ -1,0 +1,707 @@
+#include "CAMShift.h"
+#include <cmath>
+#include <sstream>
+#include "../ClassWinSocket/C_WinSocket.h"
+
+CAMShift* CAMShift::mSingletonInstancePtr(0);
+const int CAMShift::MAX_LOSING_COUNT = 5;
+const int CAMShift::MAX_THRESHOLD = 250;
+const int CAMShift::MIN_THRESHOLD = 30;
+const int CAMShift::STANDARD_THRESHOLD = 120;
+
+//fstream CAMShift::fileOut2;
+
+CAMShift::CAMShift( int iWidth, int iHeight )
+{
+	width = iWidth;
+	height = iHeight;
+	hdims = 16;
+	mLosingCount = 0;
+	mIterationCount = 0;
+	mFlagIteration[0] = 0;
+	mFlagIteration[1] = 4;
+	mFlagIteration[2] = 8;
+	mFlagIteration[3] = 12;
+	mFlagIteration[4] = 16;
+	mFlagIteration[5] = 20;
+	//mStartTimeStamp = 0;
+	//mEndTimeStamp = 0;
+	float hranges_arr[] = {0,180};
+    float* hranges = hranges_arr;
+	vmin = 50;  vmax = 240;    smin = 60; 
+
+	hsv = cvCreateImage(cvSize(width,height),8,3);
+	hue = cvCreateImage(cvSize(width,height),8,1);
+	
+	sat = cvCreateImage(cvSize(width,height),8,1);
+	val = cvCreateImage(cvSize(width,height),8,1);
+	
+	crtMask = cvCreateImage(cvSize(width,height),8,1);
+	mask = cvCreateImage( cvSize(width,height), 8, 1 );
+	safeMask = cvCreateImage( cvSize(width,height), 8, 1 );
+	cvZero(safeMask);
+	cvRectangle(safeMask, cvPoint(of_x,of_y), cvPoint(width-of_x, height-of_y), cvScalar(255), -1);
+	ROImask = cvCreateImage( cvSize(width,height), 8, 1 );
+	cvZero(ROImask);
+
+    backproject = cvCreateImage( cvSize(width,height), 8, 1 );
+
+	half_backproject = cvCreateImage( cvSize(width,height), 8, 1 );
+
+	targetSat=0;
+
+	ck = cvCreateStructuringElementEx( /*11*/17, /*11*/17, 8, 8, CV_SHAPE_ELLIPSE, NULL );
+	erosion = cvCreateStructuringElementEx( /*11*/7, /*11*/7, 3, 3, CV_SHAPE_ELLIPSE, NULL );
+	bigErosion = cvCreateStructuringElementEx( /*11*/9, /*11*/9, 4, 4, CV_SHAPE_ELLIPSE, NULL );
+	smlErosion = cvCreateStructuringElementEx( /*11*/4, /*11*/4, 2, 2, CV_SHAPE_ELLIPSE, NULL );
+	connectionElement = cvCreateStructuringElementEx( 26, 26, 13, 13, CV_SHAPE_ELLIPSE, NULL );
+
+    hist = cvCreateHist( 1, &hdims, CV_HIST_ARRAY, &hranges, 1 );
+	crtHist = cvCreateHist( 1, &hdims, CV_HIST_ARRAY, &hranges, 1 );
+	histimg = cvCreateImage( cvSize(320,200), 8, 3 );
+	crtHistimg = cvCreateImage( cvSize(320,200), 8, 3 );
+	purifiedHistimg = cvCreateImage( cvSize(320,200), 8, 3 );
+    cvZero( histimg );
+	cvZero( purifiedHistimg );
+
+	mPrePosX = 0;
+	mPrePosY = 0;
+	mPreRot = 0.0f;
+	//mPreArea = 0.0f;
+
+	mStartFlag = true;
+	noMotionCnt = 0;
+	losingCnt = 0;
+	maxIt = 0;
+}
+
+//
+//CAMShift::CAMShift( string &presentedNormalString, string &presentedControlString )
+//{
+//	CAMShift();
+//
+//	mPresentedNormalString = presentedNormalString;
+//	mPresentedControlString = presentedControlString;
+//}
+
+ CAMShift::~CAMShift()
+ { 
+	 cvReleaseImage( &hsv );
+	 cvReleaseImage( &hue );
+	 cvReleaseImage( &sat );
+	 cvReleaseImage( &val );
+	 cvReleaseImage( &crtMask );
+	 cvReleaseImage( &mask );
+	 cvReleaseImage( &backproject );
+	 cvReleaseImage( &histimg );
+	 cvReleaseImage( &crtHistimg );
+	 cvReleaseImage( &purifiedHistimg );
+	 cvReleaseImage( &half_backproject );
+	 cvReleaseImage( &safeMask );
+	 cvReleaseImage( &ROImask );
+
+	 cvReleaseHist( &hist );
+	 cvReleaseHist( &crtHist );
+
+	 //cvReleaseImage( &morphImage );
+	 cvReleaseStructuringElement( &ck );
+	 cvReleaseStructuringElement( &erosion );
+ 	 cvReleaseStructuringElement( &bigErosion );
+ 	 cvReleaseStructuringElement( &smlErosion );
+ 	 cvReleaseStructuringElement( &connectionElement );
+
+	 cvDestroyAllWindows();
+ }
+
+void CAMShift::init( C_WinSocketClient *client, string *presentedNormalString, string *presentedControlString )
+{
+	mClient = client;
+
+	mPresentedNormalString = presentedNormalString;
+	mPresentedControlString = presentedControlString;
+}
+
+void CAMShift::initCamShiftChecking(IplImage * image, IplImage * fgMask, CvRect target )
+{	
+	cvResetImageROI( hue/*, target */);
+	cvResetImageROI( mask/*, target*/ );
+	cvResetImageROI( hsv/*, target */);
+	cvResetImageROI( image/*, target*/ );
+	cvResetImageROI( sat/*, target */);
+	cvResetImageROI( val/*, target*/ );
+	cvResetImageROI( fgMask/*, target*/ );
+	cvResetImageROI( backproject/*, target*/);
+
+	float max_val = 0.f;
+	track_window = target;
+	cvCvtColor( image, hsv, CV_BGR2HSV );
+	/*cvInRangeS( hsv, cvScalar(0,smin,MIN(vmin,vmax),0),
+					cvScalar(180,256,MAX(vmin,vmax),0), mask );*/
+	
+	//dilate 如此可以讓saturation的門檻設高一點，卻又不讓抓物體的手指或是追蹤物體的深淺色細紋使橢圓排斥
+
+	cvDilate( mask, mask, ck, 1 );
+
+	cvSplit( hsv, hue, sat, val, 0 );
+
+	//
+	cvAnd(sat, fgMask, sat);
+	long double sum=0;
+	int count=0;
+	for (int g=target.x+static_cast<int>(0.5*target.width)-static_cast<int>(0.2*target.width); g<target.x+static_cast<int>(0.5*target.width)+static_cast<int>(0.2*target.width); g++)
+	{
+		for (int n=target.y+static_cast<int>(0.5*target.height)-static_cast<int>(0.2*target.height); n<target.y+static_cast<int>(0.5*target.height)+static_cast<int>(0.2*target.height); n++)
+		{
+			sum += cvGetReal2D(sat, n, g);
+			count++;
+			if (n%10==1)
+				n=n;
+		}
+		g=g;
+	}
+	targetSat = sum/count;
+
+	//2009/4/15 1726
+	cvInRangeS(sat, cvScalar(targetSat-SatTh), cvScalar(targetSat+SatTh), sat);
+	cvEqualizeHist(sat, sat);
+	//cvNamedWindow("initial sat", 1);
+	//cvShowImage("initial sat", sat);
+	//2009/4/15 1726
+
+	cvAnd( mask, fgMask, mask );
+	cvSetImageROI( hue, target );
+	cvSetImageROI( mask, target );
+	cvCalcHist( &hue, hist, 0, mask );
+	cvGetMinMaxHistValue( hist, 0, &max_val, 0, 0 );
+	cvConvertScale( hist->bins, hist->bins, max_val ? 255. / max_val : 0., 0 );
+	cvResetImageROI( hue );
+	cvResetImageROI( mask );
+	int bin_w = histimg->width / hdims;
+	//
+	cvZero(histimg);
+	//
+	for( int i = 0; i < hdims; i++ )
+	{
+		int val = cvRound( cvGetReal1D(hist->bins,i)*histimg->height/255 );
+		CvScalar color = hsv2rgb(i*180.f/hdims);
+		cvRectangle( histimg, cvPoint(i*bin_w,histimg->height),
+				cvPoint((i+1)*bin_w,histimg->height - val),
+				color, -1, 8, 0 );
+	}
+	//cvNamedWindow("tar Hist(raw)", 1);
+	//cvShowImage("tar Hist(raw)", histimg);
+
+	////start to purify the histogram
+	//cvZero(histimg);
+	//for (int i=0; i<hdims; i++)
+	//{
+	//	if (cvGetReal1D(hist->bins,i) < purifyFactor*255.)
+	//	{
+	//		*(cvGetHistValue_1D(hist, i)) = 0.;
+	//	}
+	//	
+	//	int val = cvRound( cvGetReal1D(hist->bins,i)*histimg->height/255 );
+	//	CvScalar color = hsv2rgb(i*180.f/hdims);
+	//	if (val != 0)
+	//	cvRectangle( histimg, cvPoint(i*bin_w,histimg->height),
+	//			cvPoint((i+1)*bin_w,histimg->height - val),
+	//			color, -1, 8, 0 );
+	//}
+
+	//2009/4/15 1705
+	//cvNamedWindow("tar Hist(purified)", 1);
+	//cvShowImage("tar Hist(purified)", histimg);
+	//2009/4/15 1705
+
+	cvNormalizeHist(hist,1);
+
+	cvCalcBackProject( &hue, backproject, hist );
+
+	//2009/4/15 2033
+	//for (int g=target.x+0.5*target.width-0.2*target.width; g<target.x+0.5*target.width+0.2*target.width; g++)
+	//{
+	//	for (int n=target.y+0.5*target.height-0.2*target.height; n<target.y+0.5*target.height+0.2*target.height; n++)
+	//	{
+	//		fileOut2 << cvGetReal2D(backproject, n, g) << "at (" << g << ", " << n << ")" << endl;
+	//		fileOut2 << CV_IMAGE_ELEM(backproject, int, n, g) << "at (" << g << ", " << n << ")" << endl;
+	//	}
+	//	g=g; 
+	//}
+	//2009/4/15 2033
+	
+	cvAnd( backproject, mask, backproject, 0 );
+
+	//2009/4/15 1705
+	cvEqualizeHist(backproject, backproject);
+	//cvNamedWindow("initial backproject", 1);
+	//cvShowImage("initial backproject", backproject);
+	//2009/4/15 1705
+	
+	noMotionCnt = 0;
+	losingCnt = 0;
+	maxIt = 0;
+}
+
+CvScalar CAMShift::hsv2rgb( float hue )
+{
+    int rgb[3], p, sector;
+    static const int sector_data[][3]=
+        {{0,2,1}, {1,2,0}, {1,0,2}, {2,0,1}, {2,1,0}, {0,1,2}};
+    hue *= 0.033333333333333f;
+    sector = cvFloor(hue);
+    p = cvRound(255*(hue - sector));
+    p ^= sector & 1 ? 255 : 0;
+
+    rgb[sector_data[sector][0]] = 255;
+    rgb[sector_data[sector][1]] = 0;
+    rgb[sector_data[sector][2]] = p;
+
+    return cvScalar(rgb[2], rgb[1], rgb[0],0);
+}
+
+void CAMShift::reInit()
+{
+	mStartFlag = true;
+}
+
+void CAMShift::sendControlSignal( double timeDiff, SENDING_MODE mode )
+{
+	switch( mode )
+	{
+	case DONT_CARE:
+/*		if( mStartFlag == true )
+		{
+			mPrePosX = track_v.x;
+			mPrePosY = track_v.y;
+			mPreRot = track_agl;
+			mStandardArea = track_box.size.height*track_box.size.width;
+			mStartFlag = false;
+		}
+		else */if( timeDiff >= 0.1 )
+		{
+			int posX, posY, angle, scale;
+			double currentArea = track_box.size.height+track_box.size.width;
+			posX = getPosX(static_cast<int>(track_pos.x));
+			posY = getPosY(static_cast<int>(track_pos.y));
+			angle = getRotAng(track_agl);
+			scale = getScale(STANDARD_THRESHOLD, currentArea);
+
+			stringstream sstrX;
+			sstrX << posX;
+			string strX = sstrX.str();
+
+			stringstream sstrY;
+			sstrY << posY;
+			string strY = sstrY.str();
+
+			string sPos = "Position: ( " + strX + " " + strY + ")\n";
+
+			stringstream sstrAngle;
+			sstrAngle << angle;
+			string strAngle = sstrAngle.str();
+
+			string sAngle = "Angle: " + strAngle + "\n";
+
+			stringstream sstrScale;
+			sstrScale << scale;
+			string strScale = sstrScale.str();
+
+			string sScale = "Scale: " + strScale + "\n";
+
+			(*mPresentedControlString) += (sPos + sAngle + sScale);
+
+			if( mClient->mbInitialized )
+			{
+				mClient->mWriteInt( posX );
+				mClient->mWriteInt( posY );
+				mClient->mWriteInt( angle );
+				mClient->mWriteInt( scale );
+				mClient->mWriteInt( 0 );
+
+				mClient->mSend();
+			}
+		}
+		//else{} // time limit unreached
+		break;
+	case REGRESSION:
+		if( mClient->mbInitialized /*&& timeDiff >= 0.2*/ )
+		{
+			(*mPresentedControlString) += string("regression\n");
+			//(*mPresentedControlString) +=
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 1 );
+
+			mClient->mSend();
+		}
+
+		break;
+	case DISCONNECT:
+		if( mClient->mbInitialized /*&& timeDiff >= 0.2*/ )
+		{
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 2 );
+
+			mClient->mSend();
+		}
+		break;
+
+	case TEST_ALIVE:
+		if( mClient->mbInitialized /*&& timeDiff >= 0.2*/ )
+		{
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 0 );
+			mClient->mWriteInt( 3 );
+
+			mClient->mSend();
+		}
+		break;
+	}
+}
+
+CamIterationReturn& CAMShift::setupReturn(CvPoint &ROIcenter, int returnValue)
+{
+	losingCnt = 0;
+	CamIterationReturn Return;
+	Return.targetCenter = cvPointFrom32f(track_box.center);
+	Return.val = returnValue;
+	Return.targetROI = cvRect(((ROIcenter.x-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.x-static_cast<int>(0.5*ROIdim)):0),
+		((ROIcenter.y-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.y-static_cast<int>(0.5*ROIdim)):0),
+		((ROIcenter.x+static_cast<int>(0.5*ROIdim) < width)?(ROIdim):(width-ROIcenter.x+static_cast<int>(0.5*ROIdim))),
+		((ROIcenter.y+static_cast<int>(0.5*ROIdim) < height)?(ROIdim):(height-ROIcenter.y+static_cast<int>(0.5*ROIdim))));
+
+	if( mFlagIteration[mLosingCount] == mIterationCount )
+	{
+		mLosingCount++;
+	}
+	else
+	{
+		mLosingCount = 1; // discard the count before, and start a new one
+		mIterationCount = 0;
+	}
+
+	//time(&mStartTimeStamp);
+	return Return;
+}
+
+CamIterationReturn CAMShift::iteration(IplImage *image, IplImage* &fgmask, CvRect ROI)
+{
+		if( mLosingCount > 0 ) // start counting iteration
+			mIterationCount++;
+
+		cvCvtColor( image, hsv, CV_BGR2HSV );
+		cvResetImageROI(mask);
+		cvInRangeS( hsv, cvScalar(0,smin,MIN(vmin,vmax),0),
+			    cvScalar(180,256,MAX(vmin,vmax),0), mask );
+
+		//dilate 如此可以讓saturation的門檻設高一點，卻又不讓抓物體的手指或是追蹤物體的深淺色細紋使橢圓排斥
+		cvDilate( mask, mask, ck, 1 );
+
+		cvResetImageROI(sat);
+		cvSplit( hsv, hue, sat, val, 0 );
+		
+
+		//cvNamedWindow("current target Sat", 1);
+		//cvShowImage("current target Sat", sat);
+		cvSetImageROI(sat, ROI);
+		cvInRangeS(sat, cvScalar(targetSat-SatTh), cvScalar(targetSat+SatTh), sat);
+		
+		//.............speed up...........456
+		//cvEqualizeHist(sat, sat);
+		//cvNamedWindow("current target in Ranged Sat", 1);
+		//cvShowImage("current target in Ranged Sat", sat);
+		//.............speed up...........456
+
+		//cvNamedWindow("current target Val", 1);
+		//cvShowImage("current target Val", val);
+		//cvNamedWindow("current target Hue", 1);
+		//cvShowImage("current target Hue", hue);
+
+
+		cvResetImageROI(backproject);
+		cvCalcBackProject( &hue, backproject, hist );
+
+		//
+		//cvEqualizeHist( backproject, half_backproject );
+		//
+		//cvNamedWindow("current target backproject", 1);
+		//cvShowImage("current target backproject", half_backproject);
+
+
+		cvSetImageROI(backproject, ROI);
+		cvSetImageROI(mask, ROI);
+		cvSetImageROI(half_backproject, ROI);
+		cvAnd( backproject, mask, half_backproject, 0 );
+
+		if (fgmask) 
+		{
+			cvSetImageROI(fgmask, ROI);
+			cvAnd(half_backproject, fgmask, half_backproject, 0);
+			cvAnd(sat, fgmask, sat, 0);
+		}
+
+		//2009/4/15 1721 for observation
+		cvEqualizeHist( half_backproject, half_backproject );
+		//cvNamedWindow("current target masked backproject", 1);
+		//cvShowImage("current target masked backproject", half_backproject);
+		cvEqualizeHist(sat, sat);
+		//cvNamedWindow("current masked in-ranged target sat",1 );
+		//cvShowImage("current masked in-ranged target sat", sat);
+		//2009/4/15 1721 for observation
+
+		cvAnd(half_backproject, sat, half_backproject);
+
+		cvErode(half_backproject, half_backproject, smlErosion, 1);
+		cvDilate(half_backproject, half_backproject, ck, 1);
+		cvErode(half_backproject,half_backproject, bigErosion, 1);
+		cvDilate(half_backproject,half_backproject, ck, 1);
+		cvErode(half_backproject,half_backproject, ck, 1);
+		/*cvDilate(half_backproject, half_backproject, ck, 2);
+		cvErode(half_backproject,half_backproject, ck, 2);*/
+		
+		cvSetImageROI(half_backproject, cvGetImageROI(backproject));
+
+		cvSetImageROI(safeMask, ROI);
+		cvAnd(half_backproject, safeMask, half_backproject);
+
+		cvResetImageROI(half_backproject);
+		cvZero(ROImask);
+		cvRectangle(ROImask, cvPoint(ROI.x,ROI.y), cvPoint(ROI.x+ROI.width, ROI.y+ROI.height), cvScalar(255), -1);
+		cvAnd(half_backproject, ROImask, half_backproject);
+
+		//2009/4/15 1717
+		cvEqualizeHist(half_backproject, half_backproject);
+		//cvNamedWindow("current target sat And backproject", 1);
+		//cvShowImage("current target sat And backproject", half_backproject);
+		//2009/4/15 1717
+		
+
+		int it = cvCamShift( half_backproject/*backproject*/, track_window,
+			        cvTermCriteria( CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, /*15*/10, 1/*0.75*/ ),
+				    &track_comp, &track_box );
+
+		CvPoint ROIcenter;
+		ROIcenter.x=static_cast<int>(((intepolation_m+intepolation_n)*cvPointFrom32f(track_box.center).x-intepolation_n*(ROI.x+static_cast<int>(0.5*ROI.width)))/intepolation_m);
+		ROIcenter.y=static_cast<int>(((intepolation_m+intepolation_n)*cvPointFrom32f(track_box.center).y-intepolation_n*(ROI.y+static_cast<int>(0.5*ROI.height)))/intepolation_m);
+
+//		if (maxScore == 0) it=0;
+
+		//(*mPresentedControlString) += string( "iteration!" );
+		maxIt = (maxIt >= it) ? maxIt : it;
+		
+		//time(&mEndTimeStamp);
+		if( mLosingCount == MAX_LOSING_COUNT /*|| ( mLosingCount >= 2 && difftime( mEndTimeStamp, mStartTimeStamp ) >= 2.0 )*/ ) // re-initialization
+		{
+			mIterationCount = 0;
+			mLosingCount = 0;
+
+			CamIterationReturn Return;
+			Return.val = -1;
+			return Return;
+		}
+
+		//if we got continuous 15 0's, then we restart.
+		if (it == 0 && maxIt == 0)
+		{
+			noMotionCnt++;
+			if (noMotionCnt > 15)
+			{
+				noMotionCnt = 0;
+				CamIterationReturn Return;
+				Return.targetCenter = cvPointFrom32f(track_box.center);
+				Return.val = -1;
+				Return.targetROI = cvRect(((ROIcenter.x-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.x-static_cast<int>(0.5*ROIdim)):0), 
+										  ((ROIcenter.y-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.y-static_cast<int>(0.5*ROIdim)):0), 
+										  ((ROIcenter.x+static_cast<int>(0.5*ROIdim) < width)?(ROIdim):(width-ROIcenter.x+static_cast<int>(0.5*ROIdim))),
+										  ((ROIcenter.y+static_cast<int>(0.5*ROIdim) < height)?(ROIdim):(height-ROIcenter.y+static_cast<int>(0.5*ROIdim))));
+				return Return;
+			}
+		}
+		else noMotionCnt = 0;
+
+		track_window = track_comp.rect;
+
+		//if( !image->origin )
+			track_box.angle = -track_box.angle;
+	
+		//cvRectangle( image, cvPoint(track_window.x,track_window.y),
+		//	cvPoint(track_window.x+track_window.width,track_window.y+track_window.height),
+		//	CV_RGB(100,100,0),4);
+    
+		CvPoint2D32f pt[4];
+		cvBoxPoints( track_box,  pt );
+		cvLine( image, cvPoint( static_cast<int>((pt[0].x+pt[1].x)/2), static_cast<int>((pt[0].y+pt[1].y)/2) ), cvPoint( static_cast<int>((pt[2].x+pt[3].x)/2), static_cast<int>((pt[2].y+pt[3].y)/2) ), 	CV_RGB(255,0,0), 3 );
+		cvLine( image, cvPoint( static_cast<int>((pt[0].x+pt[3].x)/2), static_cast<int>((pt[0].y+pt[3].y)/2 )), cvPoint( static_cast<int>((pt[2].x+pt[1].x)/2), static_cast<int>((pt[2].y+pt[1].y)/2) ), 	CV_RGB(255,0,0), 3 );
+		cvEllipseBox( image, track_box, CV_RGB(255,200,200), 1, 8, 0 );
+		cvRectangle( image, cvPoint(0.5*width-0.17*width, 0.5*height-0.2*height), cvPoint(0.5*width+0.17*width, 0.5*height+0.2*height), CV_RGB(255, 255, 255), 2);
+		cvRectangle( image, cvPoint(0.5*width-0.17*width-2, 0.5*height-0.2*height-2), cvPoint(0.5*width+0.17*width+2, 0.5*height+0.2*height+2), CV_RGB(0, 0, 0), 2);
+	
+		////Draw current histogram
+		//int left = min(min(pt[1].x, pt[2].x), min(pt[3].x, pt[0].x));
+		//int right = max(max(pt[1].x, pt[2].x), max(pt[3].x, pt[0].x));
+		//int top = max(max(pt[1].y, pt[2].y), max(pt[3].y, pt[0].y));
+		//int bottom = min(min(pt[1].y, pt[2].y), min(pt[3].y, pt[0].y));
+		//CvRect crtbox = cvRect(left, bottom, right-left, top-bottom);
+		//cvZero(crtMask);
+		//cvRectangle(crtMask, cvPoint(crtbox.x, crtbox.y), cvPoint(crtbox.x+crtbox.width, crtbox.y+crtbox.height), cvScalar(255), -1);
+		//cvCalcHist( &hue, crtHist, 0, crtMask );
+		//float max_val = 0.f;
+		//cvGetMinMaxHistValue( crtHist, 0, &max_val, 0, 0 );
+		//cvConvertScale( crtHist->bins, crtHist->bins, max_val ? 255. / max_val : 0., 0 );
+		//cvResetImageROI( hue );
+		//cvResetImageROI( crtMask );
+		//int bin_w = crtHistimg->width / hdims;
+		//cvZero(crtHistimg);
+		//for( int i = 0; i < hdims; i++ )
+		//{
+		//	int val = cvRound( cvGetReal1D(crtHist->bins,i)*crtHistimg->height/255 );
+		//	CvScalar color = hsv2rgb(i*180.f/hdims);
+		//	cvRectangle( crtHistimg, cvPoint(i*bin_w,crtHistimg->height),
+		//			cvPoint((i+1)*bin_w,crtHistimg->height - val),
+		//			color, -1, 8, 0 );
+		//}
+		////cvNamedWindow("current target Hist(raw)", 1);
+		////cvShowImage("current target Hist(raw)", crtHistimg);	
+
+		//if( mStartFlag == true ) // register the standard size
+		//{
+		//	mStandardArea = (track_box.size.height)*(track_box.size.width);
+		//	mMinArea = static_cast<int>(mStandardArea * 0.2);
+		//	mMaxArea = static_cast<int>(mStandardArea * 2.5);
+		//	mStartFlag = false;
+		//}
+
+		int k = static_cast<int>(track_box.size.height+track_box.size.width);
+		if ( /*k > mMaxArea || */k > MAX_THRESHOLD && (maxIt != 0))
+		{
+			losingCnt++;
+			if (losingCnt > 3)
+			{	
+				CamIterationReturn &Return = setupReturn(ROIcenter, -2);
+				return Return;
+			}
+		}
+		else if ( /*k < mMinArea ||*/ k < MIN_THRESHOLD && (maxIt != 0))
+		{
+			losingCnt++;
+			if (losingCnt > 3)
+			{
+				CamIterationReturn &Return = setupReturn(ROIcenter, -3);
+				return Return;
+			}
+		}
+		else 
+			losingCnt = 0;
+
+		//int FstAxisX1 = /*cvPointFrom32f(*/track_box.center.x + 0.5f*(double)(track_box.size.width)*(double)(cos(track_box.angle*PI/180));
+		//int FstAxisX2 = /*cvPointFrom32f(*/track_box.center.x - 0.5f*(double)(track_box.size.width)*(double)(cos(track_box.angle*PI/180));
+		//int FstAxisY1 = /*cvPointFrom32f(*/track_box.center.y + 0.5f*(double)(track_box.size.height)*(double)(sin(track_box.angle*PI/180));
+		//int FstAxisY2 = /*cvPointFrom32f(*/track_box.center.y - 0.5f*(double)(track_box.size.height)*(double)(sin(track_box.angle*PI/180));
+		//cvLine(image, cvPoint(FstAxisX1,FstAxisY1), cvPoint(FstAxisX2, FstAxisY2), CV_RGB(100, 255, 20), 3);
+
+		track_ppos = track_pos;
+		track_pos = cvPoint(static_cast<int>(track_box.center.x),static_cast<int>(track_box.center.y));
+		track_v.x = track_pos.x-track_ppos.x;
+		track_v.y = track_pos.y-track_ppos.y;
+		track_agl=track_box.angle;
+		
+		//sendControlSignal(timeDiff);	
+		
+		CamIterationReturn Return;
+		Return.targetCenter = cvPointFrom32f(track_box.center);
+		Return.val = 0;
+		Return.targetROI = cvRect(((ROIcenter.x-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.x-static_cast<int>(0.5*ROIdim)):0), 
+										  ((ROIcenter.y-static_cast<int>(0.5*ROIdim) > 0)?(ROIcenter.y-static_cast<int>(0.5*ROIdim)):0), 
+										  ((ROIcenter.x+static_cast<int>(0.5*ROIdim) < width)?(ROIdim):(width-ROIcenter.x+static_cast<int>(0.5*ROIdim))),
+										  ((ROIcenter.y+static_cast<int>(0.5*ROIdim) < height)?(ROIdim):(height-ROIcenter.y+static_cast<int>(0.5*ROIdim))));
+
+		return Return;
+}
+
+//
+//void CAMShift::setActionFail()
+//{
+//	mFailFlag = true;
+//}
+//
+//void CAMShift::setActionTrue()
+//{
+//	mFailFlag = false;
+//}
+//
+
+int CAMShift::getRotAng(float agl)
+{
+	if( agl >= 0 && agl <= 40 )
+		return 2;
+	else if( agl > 40 && agl <= 70 )
+		return 1;
+	else if( agl < 0 && agl >= -40 )
+		return -2;
+	else if( agl < -40 && agl >= -70 )
+		return -1;
+	else
+		return 0;
+}
+
+int CAMShift::getPosX(int x)
+{
+	if (-0.17*width <= x-width/2 && x-width/2 <= 0.17*width)
+		return 0;
+	else if (-(0.125*width)*2 <= x-width/2 && x-width/2 < -0.17*width)
+		return 1;
+	else if ( (0.17*width) < x-width/2 && x-width/2 <= (0.125*width)*2)
+		return -1;
+	else if ( -(0.125*width)*3 <= x-width/2 && x-width/2 < -(0.125*width)*2)
+		return 2;
+	else if ( (0.125*width)*2 < x-width/2  && x-width/2 <= (0.125*width)*3)
+		return -2;
+	else if ( x-width/2 < -(0.125*width)*3)
+		return 3;
+	else if ( (0.125*width)*3 < x-width/2)
+		return -3;
+
+}
+
+int CAMShift::getPosY(int y)
+{
+	if (-0.2*height <= y-height/2 && y-height/2 <= 0.2*height)
+		return 0;
+	else if (-(0.16667*height)*2 <= y-height/2 && y-height/2 < -0.2*height)
+		return -1;
+	else if ( (0.2*height) < y-height/2 && y-height/2 <= (0.16667*height)*2)
+		return 1;
+	else if ( y-height/2 < -(0.16667*height)*2)
+		return -2;
+	else if ( (0.16667*height)*2 < y-height/2 )
+		return 2;
+}
+
+int CAMShift::getScale(double org, double crt)
+{
+	if ( org > crt) // smaller
+	{
+		if (org/crt < 1.15)
+			return 0;
+		else if (1.15 <= org/crt && org/crt <= 1.45)
+			return -1;
+		else if (1.45 < org/crt)
+			return -2;
+	}
+	else  // larger
+	{
+		if (crt/org < 1.1)
+			return 0;
+		else if (1.1 <= crt/org && crt/org <= 1.3)
+			return 1;
+		else if (1.3 < crt/org)
+			return 2;
+	}
+}

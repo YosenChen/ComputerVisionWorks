@@ -1,0 +1,172 @@
+3/17: A.成果進度：
+      B.發現錯誤：
+      	backproject偵測是否有color blob且順便產生了particles但是
+      	不應該馬上覆蓋進particle set裡面，因為馬上接下去的resampling會依照比例
+      	分裂上一刻的particle(而不是新backproj的particle)，應該先暫存新backproj
+      	的particles，等resampling完成後(particle set會空出一半的空間)，再將新
+      	backproj的particles覆蓋進去particle set中的那半空間。
+      C.研究發現：
+      	particle filter即使存在錯誤也不一定會有明顯的效能低落，
+        這種bug解掉時效能提升的幅度也不一定會很大。因此只能靠自己細心的發現。
+ 
+3/29: A.成果進度：
+      	引入texture、hair color等feature去增加追蹤穩定度，
+      	利用continuity weight的機制創造evaluation gate的效果，為每個target的
+      	particles增加邊界，可避免被過遠的target吸走。
+      B.發現錯誤：
+      	normalizeWeight()函式中有小錯誤造成resampling不確實，有幾顆
+      	particle不會被殺掉，其weight很差，會拖累了normalizeWeight中砍小weight的機
+      	制，已解決。
+      C.研究發現：
+      	其實就算不去特地handle occlusion，只要你追蹤的夠穩定自然可以抵抗
+        target互相遮蔽的問題(靠的是robust追蹤和continuity來避免被吸走)，但是在完
+        全重疊時可能就無法再分開了。
+      
+      
+3/30: A.成果進度：
+   	建立record video的功能，能將實驗result及source錄下來供未來測試用。	
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+	加入face_detect class來穩定detection，減少誤判機會，但是拖慢速度將是
+	主要擔憂。
+	Camera calibration, depth order
+
+3/31: A.成果進度：
+	成功引入face_detect，但是似乎有很多拖慢速度的地方待處理。
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+	把明達上面日光燈太亮部分遮起來
+	depth order(particle?edge?predict?)
+	camera calibration for geometry correspondence
+	加快face_detect的速度，避免多人追蹤時拖慢整體追蹤速度
+	調整face_detect的效率：對人敏感一點、對物體抗敏感一點、
+	引用face_detect次數少一點。送進去偵測的區域大小位置要取得恰當
+	適時適量Update target color information
+	測particle filter的每個cue都要很穩定且正確
+
+04/02: A.成果進度：
+	增加讀video的功能在GUI面板上，可以load已經錄好的video來測追蹤效果
+	另外也切割好(威力導演)並轉換好(VirtualDub-1.9.8)重要的測試片段
+	srcVideo03302028_short_cvtd.avi 可供未來在家或是其他地點coding使用
+	微調偵測參數(膚色backproject門檻以及幾何距離)
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+
+04/07: A.成果進度：
+	增加了簡單的depth order，用的是比較texture的變化量大小，似乎比用
+	edge分數高低來的可靠。face_detect的速度也因為減少記憶體
+	create/release的次數而變快。
+      B.發現錯誤：
+	以前一直把人臉偵測不起來的原因怪罪到OpenCV train的不夠穩定，其實
+	是因為if (m.mu20 > 0.8*m.mu02 && m.mu02 > 0.8*m.mu20)擋掉了一部分
+	的人臉，主要因為人臉不一定是呈現接近正圓或正方的，加上脖子胸口的
+	話，其實有時會變有點長條型，所以把這個條件稍微弄寬一點後，detect
+	效果就上升了。
+      C.研究發現：
+	有時face_detect效果不彰的可能原因有：backproject的分數不好看、
+	面積THD、moment驗證其中一關有問題，仔細探究看看吧。
+      D.Future Work：
+	depth order至少在兩個人的case下夠穩、夠一般性。
+	GeometricCorrespondence class盡速完工
+	tracking其實還有進步空間，橢圓太不tight了，一定是Cue不穩or Model
+	不夠精確，或是程式bug
+	
+04/08: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+	發現particle跑太遠(因為cts扣分不夠重、defusion太遠、normalize砍小
+	weight砍得不夠重、甚至因為resampling bug)，overlapping時較會被旁
+	邊的目標物吸走
+      D.Future Work：
+04/30: A.成果進度：
+	實作出簡單版本的correspondence，
+      B.發現錯誤：
+      C.研究發現：
+	如果編譯上出現include/linking問題，要check三個地方：工具選項、專案屬性、系統內容進階環境變數。
+	一開始我的理論做法是先解幾何交點合理才去分析顏色，不能理解老師所謂的multi-cue好處在哪，但是我事
+	後想過以後發現的確multi-cue比較穩定好用，原因是multi-cue可以用更多的feature來描述一個物體或是一
+	個事件，而不是專斷的先哪個feature test濾掉後再哪個去濾，萬一每個feature都不夠穩定(大都如此)那你
+	很可能都將detection rate壓得很低，透過multi-cue你可以用更高維度的視野去分析一個物體或事件。
+	運用multi-cue的voting、and/or(甚至fuzzy條件加分)、weighting、classifying可以讓你在分析上有更大的
+	靈活運用空間，去找到最佳solution。
+      D.Future Work：
+05/17: A.成果進度：
+	有效的改善calibration不準的問題，增加geometry解交點的準確度，不用再去亂將交點z值+幾-幾了
+      B.發現錯誤：
+      C.研究發現：
+	其實不管用哪種方法去做calibration(opencv的修正函式或自己print出來調參數)，最重要的都是驗證的機制
+	要完善，你之前號稱你calibration不錯，自己走格子點時，頭的位置都可以"飄"到真實的座標，但是你現在
+	把3D space的線一條一條畫上去看發現差這麼多。用opencv的函式也不熟其功用或構造，運用效果不佳。
+	最好不管用何種方法，都要妥善充分驗證，不要只看到一點點部分吻合期望就認為正確了。
+	Calibration不準可分成(以下所稱的線影像 指的是驗證calibration所畫出來的3D投影回2D影像座標系的線)
+		refPlane normal vector不準：該向量不準所導致的error量會從中心往外遞增，該值可控制整個影像平面
+				座標系的上下左右平移，若想將整個影像座標系下移，則可以將該向量往上指一點(B,G
+				z座標值調大)，反之，想將影像座標系上移，請將向量下指。左右亦然(調x比較好)，
+				但注意目前程式讀取的影像左右顛倒，所以要調整左右方向平移的話想法要再左右相反
+				一次才對。				
+		cm_2_pixel_ratio不準：處理整個線影像呈現從中心膨脹或是像中心收縮的問題，使用時機為發現線影像
+				左右被拉長或收縮時，但注意更改此值，會同時影響到線影像上下伸縮情形。但是這可
+				能是調整線影像座標系左右伸縮的最直接方法。
+				調大將使影像往影像中心集中，調小則使影像向四方伸展，該值控制影像平面的scale大小。
+		Height_2_Width_ratio不準：專門處理width準了，但是3D投影回來2D的線好像被上下拉長了。就可以使用
+				調大，線影像上下伸展；調小，線影像上下收縮。
+		CAM_FX,FY不準：基本上我相信openCV chessboard出來的準確度，但是我不該輕易的認為FX和FY的比值
+				就會是Height_2_Width的比值。事實也驗證出來並非如此。
+		CAM_CX,CY不準：基本上我相信openCV chessboard出來的準確度
+      D.Future Work：
+05/19: A.成果進度：
+	請見PPT: Label Assignment Based on Observation Confidence.pptx
+	完成簡單版本的labeling logic maintanence，處理observations離開部分視野再進來對confidence以及correspondence
+	的影響。目前實作出high-confidence matching/collision版本後，未來可以整合medium, low版本的matching/collision
+	進去現有的labeling logic maintanence演算法
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+	學長說：
+	就用上去阿，也寫不上paper，或許對CS major的人來說根本沒什麼價值，你未來路還這麼遠，時間這麼短，你還搞不清楚
+	方向嗎？你根本沒搞懂你的進度重點在哪邊！老師也不需要懂這麼多detail，就是用上去就是了。
+	結論就是：1.用上去就是了，很基本也不能寫 2.通訊也沒弄完你是要不要畢業 3.你的confidence implement才是你唯一的
+	contribution，那你做到哪裡了？去掉這個你認為你的碩論有價值嗎？那還不趕快把這部分實作出一點可以分析的樣子！
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：
+XX/XX: A.成果進度：
+      B.發現錯誤：
+      C.研究發現：
+      D.Future Work：

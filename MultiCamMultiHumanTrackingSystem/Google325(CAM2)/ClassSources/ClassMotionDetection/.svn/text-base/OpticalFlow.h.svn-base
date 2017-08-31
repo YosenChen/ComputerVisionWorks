@@ -1,0 +1,129 @@
+#ifndef __H__OPTICALFLOW__
+#define __H__OPTICALFLOW__
+
+#include "cv.h"
+#include "cxcore.h"
+#include "highgui.h"
+
+#include <stdio.h>
+#include <ctype.h>
+#include <iostream>
+#include <ctime>
+
+#include "CAMShift.h"
+#include <direct.h>
+#include <vector>
+#include <fstream>
+#include <ctime>
+
+using namespace std;
+
+//static fstream fileOut;
+
+#define tolDis 100
+#define tar_square 80
+
+//////////////////////////////////////////////////error while deleting this line of code////////////////////////////////////
+class ProcessState;
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+class ClassOpenCVMat;
+class C_WinSocketClient;
+class CAMShift;
+
+class OpticalFlow
+{
+private:
+	ClassOpenCVMat             *mMatColorDisplayImage;
+	ClassOpenCVMat             *mMatColorDisplayResult;
+	ClassOpenCVMat             *mMatTempResult;
+	ClassOpenCVMat             *mMatTempImage;
+	bool mHasConncected;
+	char *mIp;
+	int mPort;
+	time_t mStartTimeStampReSend;
+	time_t mEndTimeStampReSend;
+	int mReSendCount;
+	bool mServerDead;
+
+	static const double RECONNECT_TIME;
+	static const int RESEND_COUNT;
+
+	void initializeImage(IplImage *frame);
+	void resetAllParameters();
+
+	vector<ProcessState*> mStates;
+
+	explicit OpticalFlow( int iWidth=320, int iHeight=240 );
+    ~OpticalFlow();
+
+	static OpticalFlow* mSingletonInstancePtr;
+
+private:	
+	int night_mode;
+
+public:
+// common
+	// all
+	int mWidth;
+	int mHeight;
+	CvRect	prevReturnROI;
+	IplImage *image, *grey, *prev_grey, *pyramid, *prev_pyramid/*, *swap_temp*/;
+	IplImage *blob, *result, *fgmask, *RgnRegion;
+
+	C_WinSocketClient *mClient;
+	CAMShift *Cam;
+	int top, bottom, right, left; // preCheckingState, checkingState;
+	CvPoint center; // checkingState, preCheckingState
+	CvFont testfont; // initialize, preCheckingState
+	CvFont Tfont; // initialize, &&??
+	string mNormalMessage;
+	string mControlMessage;
+
+	void initialize( 
+		ClassOpenCVMat  *matColorDisplayImage,
+		ClassOpenCVMat  *matColorDisplayResult );
+
+	void startProcess( IplImage* imageSource );
+
+	void showImages();
+
+	void activateMotionDetection();
+	void activateDeletingPoints();
+	void activateNightMode();
+
+	bool connect( char *ip, int port );
+	void disConnect();
+	bool isServerAlive();
+
+	string* getNormalMessage()
+	{
+		return &mNormalMessage;
+	}
+
+	string* getControlMessage()
+	{
+		return &mControlMessage;
+	}
+
+	static OpticalFlow* getSingletonPtr( int width=320, int height=240 )
+	{
+		//fileOut.open("error report.txt",ios::out);
+
+		if( mSingletonInstancePtr == 0 )
+			mSingletonInstancePtr = new OpticalFlow( width, height );
+
+        return mSingletonInstancePtr;
+	}
+
+	static void	destroyInstance()    
+	{  
+		delete   mSingletonInstancePtr;  
+		mSingletonInstancePtr=0;  
+	}   
+
+	void changeState(ProcessState* state );
+	void pushState(ProcessState* state);
+	void popState();
+};
+
+#endif

@@ -1,0 +1,49 @@
+#ifndef TrackingState_H
+#define TrackingState_H
+
+#include "ProcessState.h"
+#include "../TrackingResult.h"
+
+class TrackingState : public ProcessState {
+public:
+    void enter( OpticalFlow* SingletonInstancePtr );
+    void exit( void );
+
+    void pause( void );
+    void resume( void );
+    void update( unsigned long lTimeElapsed );
+
+	bool execute( IplImage* imageSource );
+
+	static TrackingState* getSingletonPtr( void ) 
+	{ 
+		//if( mTrackingState == 0 )
+		//	mTrackingState = new TrackingState;
+
+		return &mTrackingState;
+	}
+private:
+	time_t mStartTimeStamp;
+	time_t mEndTimeStamp;
+	time_t mStartTimeStampLosing;
+	time_t mEndTimeStampLosing;
+	int mLosingCount;
+
+	void sendControlSignal( TRACKING_RESULT result );
+	TRACKING_RESULT objectTrackingOperation();
+	bool checkReInitialization();
+
+    TrackingState() 
+	{ 
+		mLosingCount = 0;
+	}
+
+    ~TrackingState() 
+	{ 
+	
+	}
+
+    static TrackingState    mTrackingState;
+};
+
+#endif

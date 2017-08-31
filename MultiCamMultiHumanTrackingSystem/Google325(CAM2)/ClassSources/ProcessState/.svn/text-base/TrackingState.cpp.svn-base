@@ -1,0 +1,146 @@
+#include "TrackingState.h"
+#include "PreCheckingState.h"
+#include "ReTrackingState.h"
+
+TrackingState TrackingState::mTrackingState;
+
+void TrackingState::enter( OpticalFlow* SingletonInstancePtr )
+{
+	mSingletonInstancePtr = SingletonInstancePtr;
+}
+
+void TrackingState::exit( void )
+{
+}
+
+void TrackingState::pause( void )
+{
+}
+
+void TrackingState::resume( void )
+{
+}
+
+void TrackingState::update( unsigned long lTimeElapsed )
+{
+}
+
+void TrackingState::sendControlSignal( TRACKING_RESULT result )
+{
+	time (&mEndTimeStamp);
+
+	switch( result )
+	{
+	case RE_INITIALIZATION:
+		//mSingletonInstancePtr->Cam->sendControlSignal( difftime (mEndTimeStamp,mStartTimeStamp), REGRESSION );
+		//break;
+	case LOSING_OBJECT:
+		mSingletonInstancePtr->Cam->sendControlSignal( 0.2, REGRESSION );
+		break;
+	case FINE:
+		mSingletonInstancePtr->Cam->sendControlSignal( difftime (mEndTimeStamp,mStartTimeStamp), DONT_CARE );
+		break;
+	}
+
+	time (&mStartTimeStamp);
+}
+
+TRACKING_RESULT TrackingState::objectTrackingOperation()
+{
+		CamIterationReturn returnValue = mSingletonInstancePtr->Cam->iteration( mSingletonInstancePtr->result, mSingletonInstancePtr->fgmask, mSingletonInstancePtr->prevReturnROI );
+		mSingletonInstancePtr->prevReturnROI = returnValue.targetROI;
+
+		if( returnValue.val == -1 ) // jump to preCheckingState
+		{			
+			if (mSingletonInstancePtr->fgmask) 
+				cvReleaseImage( &(mSingletonInstancePtr->fgmask));
+			mSingletonInstancePtr->fgmask = 0;
+			return RE_INITIALIZATION;
+		}
+		else if( returnValue.val == -2 ) // jump to reTrackingObjectState
+		{
+			if( !(mSingletonInstancePtr->fgmask) )
+				mSingletonInstancePtr->fgmask = cvCreateImage( cvGetSize(mSingletonInstancePtr->result), 8, 1 );
+			cvZero(mSingletonInstancePtr->fgmask);
+
+			CvRect maskbox;
+			maskbox.x = (returnValue.targetCenter.x-static_cast<int>(0.2*tar_square) > 0) ? returnValue.targetCenter.x-static_cast<int>(0.2*tar_square) : 0;
+			maskbox.y = (returnValue.targetCenter.y-static_cast<int>(0.2*tar_square) > 0) ? returnValue.targetCenter.y-static_cast<int>(0.2*tar_square) : 0;
+			maskbox.height = (maskbox.y+static_cast<int>(0.4*tar_square) < mSingletonInstancePtr->mHeight) ? static_cast<int>(0.4*tar_square) : mSingletonInstancePtr->mHeight-maskbox.y;
+			maskbox.width = (maskbox.x+static_cast<int>(0.4*tar_square) < mSingletonInstancePtr->mWidth) ? static_cast<int>(0.4*tar_square) : mSingletonInstancePtr->mWidth-maskbox.x;
+	        cvRectangle(mSingletonInstancePtr->fgmask, cvPoint(maskbox.x, maskbox.y), cvPoint(maskbox.x+maskbox.width, maskbox.y+maskbox.height), cvScalar(255), -1);
+
+			return LOSING_OBJECT;
+		}
+		else if (returnValue.val == -3) // jump to reTrackingObjectState
+		{
+			if (mSingletonInstancePtr->fgmask) 
+				cvReleaseImage( &(mSingletonInstancePtr->fgmask));
+			mSingletonInstancePtr->fgmask = 0;
+			return LOSING_OBJECT;
+
+		}
+
+		if (mSingletonInstancePtr->fgmask)
+			cvReleaseImage(&(mSingletonInstancePtr->fgmask));
+
+		mSingletonInstancePtr->fgmask=0;
+
+		return FINE;  // continue this state
+}
+
+bool TrackingState::checkReInitialization()
+{
+	time( &mEndTimeStampLosing );
+	
+	if( mLosingCount >= 3 )
+	{
+		if( difftime( mEndTimeStampLosing, mStartTimeStampLosing ) >= 2.0 )
+		{
+			mLosingCount = 0;
+			return true;
+		}
+		else
+			mLosingCount = 0;
+	}
+	time( &mStartTimeStampLosing );
+
+	return false;
+}
+
+bool TrackingState::execute( IplImage* imageSource )
+{
+
+	TRACKING_RESULT trackingResult = objectTrackingOperation();
+
+	switch( trackingResult )
+	{
+	case RE_INITIALIZATION: // jump to PreCheckingState
+		sendControlSignal( RE_INITIALIZATION );
+
+		mSingletonInstancePtr->mNormalMessage += string("re-initialization!\n");
+
+		changeState( PreCheckingState::getSingletonPtr() );
+		return false;
+		break;
+
+	case LOSING_OBJECT: // jump to ReTrackingState or CheckingState
+		mLosingCount++;
+		mSingletonInstancePtr->mNormalMessage += string("Losing\n");
+
+		if( checkReInitialization() == true )
+			changeState( PreCheckingState::getSingletonPtr() );
+		else
+			changeState( ReTrackingState::getSingletonPtr() );
+
+		return false; 
+		break;
+
+	case FINE: // continue tracking
+		sendControlSignal( FINE );
+
+		break;
+	}
+
+	return true;
+}

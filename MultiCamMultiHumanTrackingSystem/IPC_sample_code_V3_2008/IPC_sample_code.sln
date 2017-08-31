@@ -1,0 +1,20 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "IPC_sample_code", "IPC_sample_code\IPC_sample_code.vcproj", "{5975CD1A-8116-43CB-ACE4-65296A901FF1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5975CD1A-8116-43CB-ACE4-65296A901FF1}.Debug|Win32.ActiveCfg = Debug|Win32
+		{5975CD1A-8116-43CB-ACE4-65296A901FF1}.Debug|Win32.Build.0 = Debug|Win32
+		{5975CD1A-8116-43CB-ACE4-65296A901FF1}.Release|Win32.ActiveCfg = Release|Win32
+		{5975CD1A-8116-43CB-ACE4-65296A901FF1}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

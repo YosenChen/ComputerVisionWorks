@@ -1,0 +1,119 @@
+#ifndef CAMSHIFTH
+#define CAMSHIFTH
+
+#include <iostream>
+#include <ctime>
+#include <windows.h>
+#include <fstream>
+#include "cv.h"
+#include "cxcore.h"
+#include "cvaux.h"
+#include "highgui.h"
+#include "../TrackingResult.h"
+
+#define purifyFactor 0.333333333//can see deeper!?
+#define PI 3.14159265f
+#define of_x 5
+#define of_y 5
+#define ROIdim 120
+#define intepolation_m 3
+#define intepolation_n 2.5
+#define SatTh 45
+
+using namespace std;
+
+class C_WinSocketClient;
+
+struct CamIterationReturn
+{
+	int val;
+	CvPoint targetCenter;
+	CvRect targetROI;
+};
+
+class CAMShift
+{
+     private:
+		
+		 //CvHistogram *hist;
+		 //static fstream fileOut2;
+		 int mLosingCount;
+		 int mIterationCount;
+		 int mFlagIteration[6];
+		 static const int MAX_LOSING_COUNT;
+		 static const int MAX_THRESHOLD;
+		 static const int MIN_THRESHOLD;
+		 static const int STANDARD_THRESHOLD;
+		 CvPoint track_v;
+		 CvPoint track_pos;
+		 CvPoint track_ppos;
+		 float track_agl;
+		 int losingCnt;
+		 int noMotionCnt;
+		 int maxIt;
+		 double targetSat;
+		 int mMinArea;
+		 int mMaxArea;
+         		 
+		int mPrePosX; 
+		int mPrePosY;
+		float mPreRot;
+		//float mPreArea; 
+		C_WinSocketClient *mClient;
+		bool mStartFlag;
+		float mStandardArea;
+		//IplImage* morphImage;
+		IplConvKernel *ck, *erosion, *bigErosion, *smlErosion, *connectionElement;
+		double mTimeDiff;
+
+		string *mPresentedNormalString;
+        string *mPresentedControlString;
+
+		static CAMShift* mSingletonInstancePtr;
+		CamIterationReturn& CAMShift::setupReturn(CvPoint &ROIcenter, int returnValue);
+
+		 explicit CAMShift( int iWidth=320, int iHeight=240 );
+		 ~CAMShift();
+
+     public:
+		 //CAMShift( string &presentedNormalString, string &presentedControlString );
+         
+		 CvBox2D getTrack_box() {return track_box;}
+		 CvPoint getTrack_ppos() {return track_ppos;}
+		 IplImage *backproject, *histimg, *hsv, *hue, *sat, *val, *mask, *crtMask, *crtHistimg, *half_backproject, *safeMask, *ROImask;
+		 IplImage *purifiedHistimg;
+		 CvRect track_window;
+		 CvBox2D track_box;
+		 CvConnectedComp track_comp;
+		 int vmin, vmax, smin, width, height, hdims;
+		 CvHistogram *hist, *crtHist;
+
+		 void initCamShiftChecking(IplImage * image, IplImage * fgMask, CvRect target );
+		 void init( C_WinSocketClient *client, string *presentedNormalString, string *presentedControlString );
+		 void reInit();
+		 CvScalar hsv2rgb( float );
+		 void sendControlSignal( double timeDiff, SENDING_MODE mode );
+		 CamIterationReturn iteration(IplImage *, IplImage * &, CvRect ROI );
+		 int getRotAng(float agl);
+		 int getPosX(int x);
+		 int getPosY(int y);
+		 int getScale(double original, double current);
+
+		static CAMShift* getSingletonPtr( int width=320, int height=240 )
+		{
+			//fileOut2.open("error report2.txt",ios::out);
+
+			if( mSingletonInstancePtr == 0 )
+				mSingletonInstancePtr = new CAMShift( width, height );
+
+			return mSingletonInstancePtr;
+		}
+
+		static void	destroyInstance()
+		{  
+			delete   mSingletonInstancePtr;  
+			mSingletonInstancePtr=0;  
+		}  
+};
+
+#endif
